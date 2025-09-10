@@ -105,6 +105,114 @@ function parseLangCode(lang) {
     return lang;
 }
 
+// Helper function to calculate similarity between release names
+function calculateReleaseNameSimilarity(name1, name2) {
+    if (!name1 || !name2) return 0;
+    
+    // Normalize names: lowercase, remove special chars, split into words
+    const normalize = (name) => name.toLowerCase()
+        .replace(/[^\w\s]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .split(' ')
+        .filter(word => word.length > 2); // Remove short words
+    
+    const words1 = normalize(name1);
+    const words2 = normalize(name2);
+    
+    if (words1.length === 0 || words2.length === 0) return 0;
+    
+    // Calculate Jaccard similarity (intersection over union)
+    const set1 = new Set(words1);
+    const set2 = new Set(words2);
+    const intersection = new Set([...set1].filter(x => set2.has(x)));
+    const union = new Set([...set1, ...set2]);
+    
+    return intersection.size / union.size;
+}
+
+// Helper function to detect and calculate optimal time offset between subtitle sets
+function detectTimeOffset(mainSubs, transSubs, maxOffsetMs = 30000) {
+    if (!mainSubs || !transSubs || mainSubs.length < 10 || transSubs.length < 10) {
+        return 0; // Not enough data for reliable offset detection
+    }
+    
+    const sampleSize = Math.min(50, Math.min(mainSubs.length, transSubs.length));
+    const offsets = [];
+    
+    // Test different offset values
+    for (let offsetMs = -maxOffsetMs; offsetMs <= maxOffsetMs; offsetMs += 1000) {
+        let matches = 0;
+        let totalTimeDiff = 0;
+        
+        for (let i = 0; i < sampleSize; i++) {
+            const mainSub = mainSubs[i];
+            const mainStartTime = parseTimeToMs(mainSub.startTime);
+            
+            // Find closest translation subtitle with offset applied
+            let closestTransSub = null;
+            let closestTimeDiff = Infinity;
+            
+            for (const transSub of transSubs) {
+                const transStartTime = parseTimeToMs(transSub.startTime) + offsetMs;
+                const timeDiff = Math.abs(mainStartTime - transStartTime);
+                
+                if (timeDiff < closestTimeDiff && timeDiff < 3000) { // Within 3 seconds
+                    closestTimeDiff = timeDiff;
+                    closestTransSub = transSub;
+                }
+            }
+            
+            if (closestTransSub && closestTimeDiff < 2000) { // Within 2 seconds
+                matches++;
+                totalTimeDiff += closestTimeDiff;
+            }
+        }
+        
+        if (matches > 0) {
+            const avgTimeDiff = totalTimeDiff / matches;
+            const matchRatio = matches / sampleSize;
+            offsets.push({ offset: offsetMs, matches, matchRatio, avgTimeDiff });
+        }
+    }
+    
+    if (offsets.length === 0) return 0;
+    
+    // Find the offset with the best match ratio and lowest average time difference
+    offsets.sort((a, b) => {
+        if (Math.abs(a.matchRatio - b.matchRatio) > 0.1) {
+            return b.matchRatio - a.matchRatio; // Higher match ratio is better
+        }
+        return a.avgTimeDiff - b.avgTimeDiff; // Lower average time diff is better
+    });
+    
+    const bestOffset = offsets[0];
+    console.log(`Detected time offset: ${bestOffset.offset}ms (${bestOffset.matches}/${sampleSize} matches, avg diff: ${bestOffset.avgTimeDiff.toFixed(0)}ms)`);
+    
+    return bestOffset.matchRatio > 0.3 ? bestOffset.offset : 0; // Only apply if at least 30% match
+}
+
+// Helper function to apply time offset to subtitle array
+function applyTimeOffset(subs, offsetMs) {
+    if (offsetMs === 0) return subs;
+    
+    return subs.map(sub => ({
+        ...sub,
+        startTime: formatTimeFromMs(parseTimeToMs(sub.startTime) + offsetMs),
+        endTime: formatTimeFromMs(parseTimeToMs(sub.endTime) + offsetMs)
+    }));
+}
+
+// Helper function to format milliseconds back to SRT time format
+function formatTimeFromMs(ms) {
+    const hours = Math.floor(ms / 3600000);
+    const minutes = Math.floor((ms % 3600000) / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
+    const milliseconds = ms % 1000;
+    
+    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')},${milliseconds.toString().padStart(3, '0')}`;
+}
+
 // Reset the rate limit counter every minute
 function setupRateLimitReset() {
     requestTimer = setInterval(() => {
@@ -216,11 +324,23 @@ async function fetchAndSelectSubtitle(languageId, baseSearchParams, type) {
              return null;
         }
 
-        // Sort the valid subtitles by download count (descending)
+        // Enhanced sorting: prioritize by rating and download count, with special handling for Hungarian
         validFormatSubs.sort((a, b) => {
             const downloadsA = parseInt(a.SubDownloadsCnt, 10) || 0;
             const downloadsB = parseInt(b.SubDownloadsCnt, 10) || 0;
-            return downloadsB - downloadsA; // Sort descending
+            const ratingA = parseFloat(a.SubRating) || 0;
+            const ratingB = parseFloat(b.SubRating) || 0;
+            
+            // For Hungarian subtitles, prioritize higher rated subtitles even if they have fewer downloads
+            if (languageId === 'hun') {
+                // If ratings are significantly different, prefer higher rating
+                if (Math.abs(ratingA - ratingB) > 1.0) {
+                    return ratingB - ratingA;
+                }
+            }
+            
+            // Otherwise, sort by download count (descending)
+            return downloadsB - downloadsA;
         });
 
         // Map to the desired return format
@@ -500,7 +620,7 @@ function parseTimeToMs(timeString) {
 }
 
 // Merges two arrays of parsed subtitles based on time
-function mergeSubtitles(mainSubs, transSubs, mergeThresholdMs = 500) {
+function mergeSubtitles(mainSubs, transSubs, mergeThresholdMs = 2000) {
     console.log(`Merging ${mainSubs.length} main subs with ${transSubs.length} translation subs.`);
     const mergedSubs = [];
     let transIndex = 0;
@@ -532,15 +652,28 @@ function mergeSubtitles(mainSubs, transSubs, mergeThresholdMs = 500) {
             const transStartTime = parseTimeToMs(transSub.startTime);
             const transEndTime = parseTimeToMs(transSub.endTime);
 
-            // Check for time overlap or closeness
+            // Enhanced time overlap and closeness detection
             const startsOverlap = (transStartTime >= mainStartTime && transStartTime < mainEndTime);
             const endsOverlap = (transEndTime > mainStartTime && transEndTime <= mainEndTime);
             const isWithin = (transStartTime >= mainStartTime && transEndTime <= mainEndTime);
             const contains = (transStartTime < mainStartTime && transEndTime > mainEndTime);
             const timeDiff = Math.abs(mainStartTime - transStartTime); // Proximity of start times
+            
+            // Calculate overlap percentage for better matching
+            const overlapStart = Math.max(mainStartTime, transStartTime);
+            const overlapEnd = Math.min(mainEndTime, transEndTime);
+            const overlapDuration = Math.max(0, overlapEnd - overlapStart);
+            const mainDuration = mainEndTime - mainStartTime;
+            const transDuration = transEndTime - transStartTime;
+            const overlapPercentage = overlapDuration > 0 ? 
+                (overlapDuration / Math.min(mainDuration, transDuration)) : 0;
 
-            // Prioritize overlaps, then proximity
-            if (startsOverlap || endsOverlap || isWithin || contains || timeDiff < mergeThresholdMs) {
+            // Enhanced matching criteria: prioritize overlaps, then proximity, with special handling for large time diffs
+            const hasSignificantOverlap = overlapPercentage > 0.3; // 30% overlap threshold
+            const isCloseInTime = timeDiff < mergeThresholdMs;
+            const isReasonablyClose = timeDiff < mergeThresholdMs * 2; // Allow up to 4 seconds difference
+            
+            if (startsOverlap || endsOverlap || isWithin || contains || hasSignificantOverlap || isCloseInTime || isReasonablyClose) {
                 // This sub is a potential match. Find the *closest* start time.
                 if (timeDiff < smallestTimeDiff) {
                     smallestTimeDiff = timeDiff;
@@ -812,15 +945,42 @@ process.on('SIGINT', () => {
                     return { subtitles: [], cacheMaxAge: 60 };
                 }
                 
-                // 2. Select up to 4 unique translation candidates
+                // 2. Select up to 4 unique translation candidates, prioritizing by release name similarity
                 const selectedTransSubs = [];
                 const usedTransUrls = new Set();
-                for (const transSub of transSubInfoList) {
+                
+                // Get the best main subtitle release name for comparison
+                const bestMainReleaseName = mainSubInfoList[0]?.releaseName || '';
+                
+                // Sort translation subtitles by release name similarity to main subtitle
+                const transSubsWithSimilarity = transSubInfoList.map(transSub => ({
+                    ...transSub,
+                    releaseNameSimilarity: calculateReleaseNameSimilarity(bestMainReleaseName, transSub.releaseName)
+                }));
+                
+                // Sort by similarity first, then by original criteria
+                transSubsWithSimilarity.sort((a, b) => {
+                    // Prioritize high similarity scores
+                    if (Math.abs(a.releaseNameSimilarity - b.releaseNameSimilarity) > 0.1) {
+                        return b.releaseNameSimilarity - a.releaseNameSimilarity;
+                    }
+                    // Then by rating for Hungarian
+                    if (transLang === 'hun') {
+                        const ratingDiff = Math.abs(a.rating - b.rating);
+                        if (ratingDiff > 1.0) {
+                            return b.rating - a.rating;
+                        }
+                    }
+                    // Finally by download count
+                    return b.downloads - a.downloads;
+                });
+                
+                for (const transSub of transSubsWithSimilarity) {
                     if (selectedTransSubs.length >= 4) break; // Stop if we have 4
                     if (!usedTransUrls.has(transSub.url)) {
                         selectedTransSubs.push(transSub);
                         usedTransUrls.add(transSub.url);
-                        console.log(`Selected translation candidate #${selectedTransSubs.length}: ID=${transSub.id}, Downloads=${transSub.downloads}, URL=${transSub.url}`);
+                        console.log(`Selected translation candidate #${selectedTransSubs.length}: ID=${transSub.id}, Downloads=${transSub.downloads}, Similarity=${transSub.releaseNameSimilarity.toFixed(2)}, Release=${transSub.releaseName}`);
                     }
                 }
 
@@ -881,9 +1041,18 @@ process.on('SIGINT', () => {
                         continue; // Skip to next candidate
                     }
 
+                    // Detect and apply time offset before merging
+                    console.log(`Detecting time offset for translation v${version}...`);
+                    const detectedOffset = detectTimeOffset(mainParsed, transParsed);
+                    const adjustedTransParsed = applyTimeOffset(transParsed, detectedOffset);
+                    
+                    if (detectedOffset !== 0) {
+                        console.log(`Applied ${detectedOffset}ms time offset to translation v${version}`);
+                    }
+                    
                     // Merge with main
                     console.log(`Merging main with translation v${version}...`);
-                    const mergedParsed = mergeSubtitles([...mainParsed], transParsed); // Use copy of mainParsed
+                    const mergedParsed = mergeSubtitles([...mainParsed], adjustedTransParsed); // Use copy of mainParsed
                     if (!mergedParsed || mergedParsed.length === 0) {
                         console.warn(`Merging failed or resulted in empty subtitles for v${version}. Skipping.`);
                         continue; // Skip to next candidate
