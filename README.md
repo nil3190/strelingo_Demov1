@@ -1,90 +1,116 @@
-# Strelingo Stremio Addon
+# Strelingo — Stremio Dual Language Subtitles Addon
 
-This Stremio addon fetches subtitles for movies and series from OpenSubtitles and merges two language tracks into a single subtitle file. This is particularly useful for language learners who want to see subtitles in both their native language and the language they are learning simultaneously.
+A self-hosted [Stremio](https://www.stremio.com/) addon that fetches subtitles for movies and series from **OpenSubtitles** and merges two language tracks into a single SRT file — designed for language learners who want native and target language subtitles displayed simultaneously.
 
-![Ekran görüntüsü 2025-04-18 142351](https://github.com/user-attachments/assets/d2441e6c-82b7-4115-876d-1af0e419f6df)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/import/project?template=https://github.com/nil3190/strelingo_Demov1)
 
-## Easy deploy to vercel
-You can easily deploy this addon and host it yourself on vercel by clicking button below. The free hobby plan is more than enough for personal uses. You may need to setup vercel blob storage btw.
+**Live Demo:** [strelingo-demov1.vercel.app](https://strelingo-demov1.vercel.app)
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/import/project?template=https://github.com/Serkali-sudo/strelingo-addon)
+---
 
-## Demo Live Addon Url
-You can either add the Stremio addon by copying this and use add addon in stremio:
- ```bash 
- https://strelingo-addon.vercel.app/manifest.json
- ```
-or visit the addon page here:  
-[https://strelingo-addon.vercel.app](https://strelingo-addon.vercel.app).
+## Screenshot
 
-## Providers
-* OpenSubtitles.
-* [Buta no subs Stremio addon](https://github.com/Pigamer37/buta-no-subs-stremio-addon) for better japanese subtitles (Implemented by @Pigamer37).
+![Strelingo dual subtitle preview](https://github.com/user-attachments/assets/d2441e6c-82b7-4115-876d-1af0e419f6df)
+
+---
 
 ## Features
 
-*   Fetches subtitles from OpenSubtitles.
-*   Automatically detects the best available subtitles for two selected languages.
-*   Handles Gzip compressed subtitles.
-*   Detects and decodes various character encodings (using `chardet` and `iconv-lite`) to support languages with special characters.
-*   Merges the main language and translation language subtitles into a single `.srt` file.
-*   Formats the translation line to be *italic* and <font color="yellow">yellow</font> (yellow color doesnt work due to stremio overriding the color of subtitles).
-*   Configurable via Stremio addon settings for:
-    *   Main Language (Audio Language)
-    *   Translation Language (Your Language)
+- Fetches subtitles from **OpenSubtitles** and [Buta no Subs](https://github.com/Pigamer37/buta-no-subs-stremio-addon) (better Japanese coverage)
+- **Merges two subtitle tracks** into a single `.srt` stream
+- Secondary (translation) subtitles rendered in *italic* style
+- Handles **Gzip-compressed** subtitle files automatically
+- **Multi-encoding support** via `chardet` + `iconv-lite` (great for non-Latin scripts)
+- Configurable directly from the Stremio addon settings UI:
+  - Primary Language (audio language)
+  - Translation Language (your native language)
+- Subtitle files hosted via **Vercel Blob** or **Supabase Storage**
+- One-click deploy to Vercel
 
-## Requirements
+---
 
-*   [Node.js](https://nodejs.org/) (Version 14 or higher recommend)
-*   [npm](https://www.npmjs.com/) or [yarn](https://yarnpkg.com/)
-*   You will need either vercel blob key or supabase storage credentials. Because the addon creates a brand new srt everytime and it has to host somewhere. you can put those credentials in .env (You can techinally return the subtitle as base64 but i have found that it only works for stremio 4 version, it didnt worked in stremio 5 or mobile stremio)
-*   If you want vercel blob create a vercel blob in vercel and copy the token and put it in your env named BLOB_READ_WRITE_TOKEN
-*   If you want supabase storage instead of vercel you will need to copy SUPABASE_URL, SUPABASE_SERVICE_KEY, SUPABASE_ANON_KEY credentials from your supabase account.
+## Tech Stack
+
+![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat-square&logo=javascript&logoColor=black)
+![Node.js](https://img.shields.io/badge/Node.js-43853D?style=flat-square&logo=node.js&logoColor=white)
+![Express](https://img.shields.io/badge/Express-000000?style=flat-square&logo=express&logoColor=white)
+![Vercel](https://img.shields.io/badge/Vercel-000000?style=flat-square&logo=vercel&logoColor=white)
+
+**Key Dependencies:** `stremio-addon-sdk` · `axios` · `srt-parser-2` · `pako` · `chardet` · `iconv-lite` · `@vercel/blob` · `@supabase/supabase-js`
+
+---
 
 ## Local Setup
 
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/Serkali-sudo/strelingo-addon
-    cd strelingo-addon
-    ```
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    # or
-    # yarn install
-    ```
+### Prerequisites
 
-## Running the Addon Locally
+- [Node.js](https://nodejs.org/) v14+
+- An [OpenSubtitles](https://www.opensubtitles.com/) account and API key
+- Either a **Vercel Blob** token or **Supabase** project credentials (for hosting merged SRT files)
 
-1.  **Start the addon server:**
-    ```bash
-    npm start
-    # or
-    # yarn start
-    ```
-2.  The console will output messages indicating the server is running.
+### Installation
 
-## Installing and Configuring in Stremio
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/nil3190/strelingo_Demov1.git
+   cd strelingo_Demov1
+   ```
 
-1.  Ensure the addon server is running locally (see "Running the Addon Locally").
-2.  Open your web browser and navigate to the addon's local address (usually `http://localhost:7000/` or the address shown in the console when you start the server).
-3.  On the addon configuration page that loads:
-    *   Select your desired **Main Language** (typically the language the audio is in).
-    *   Select your desired **Translation Language** (typically your native language or the one you want for comparison).
-4.  Click the "Install Addon" button or link displayed on the page (it might be at the bottom).
-5.  Your browser might ask for permission to open the link with Stremio. Allow it.
-6.  Stremio should open and prompt you to confirm the installation **with your selected configuration**. Click "Install".
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-The addon is now installed and configured with your chosen languages.
+3. Create a `.env` file in the project root and add your credentials:
 
-## Technical Details
+   **Option A — Vercel Blob:**
+   ```env
+   BLOB_READ_WRITE_TOKEN=your_vercel_blob_token
+   ```
 
-*   **Backend:** Node.js
-*   **Stremio SDK:** `stremio-addon-sdk`
-*   **Subtitle Source:** OpenSubtitles API, [Buta no subs Stremio addon](https://github.com/Pigamer37/buta-no-subs-stremio-addon)
-*   **HTTP Requests:** `axios`
-*   **Subtitle Parsing:** `srt-parser-2`
-*   **Gzip Decompression:** `pako`
-*   **Character Encoding Detection:** `chardet`
-*   **Character Encoding Decoding:** `iconv-lite`
+   **Option B — Supabase Storage:**
+   ```env
+   SUPABASE_URL=your_supabase_url
+   SUPABASE_SERVICE_KEY=your_supabase_service_key
+   SUPABASE_ANON_KEY=your_supabase_anon_key
+   ```
+
+4. Start the addon server:
+   ```bash
+   npm start
+   ```
+
+### Installing into Stremio
+
+1. Open [http://localhost:7000](http://localhost:7000) in your browser.
+2. Select your **Primary Language** (audio language) and **Translation Language**.
+3. Click **Install Addon** — Stremio will open and ask you to confirm.
+4. Play any movie or series in Stremio and select the merged subtitle track.
+
+---
+
+## Deployment (Vercel)
+
+Click the **Deploy with Vercel** button above, or run:
+
+```bash
+npm install -g vercel
+vercel --prod
+```
+
+Set your environment variables in the Vercel dashboard under **Settings → Environment Variables**.
+
+---
+
+## How It Works
+
+1. When Stremio requests subtitles, the addon queries OpenSubtitles for both configured languages.
+2. Both SRT files are downloaded, decompressed (if gzipped), and decoded to UTF-8.
+3. The subtitle lines are merged: the primary language on top, the translation underneath in *italics*.
+4. The merged SRT is uploaded to Vercel Blob or Supabase and the URL is returned to Stremio.
+
+---
+
+## License
+
+MIT
